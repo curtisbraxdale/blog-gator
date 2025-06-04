@@ -1,14 +1,21 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/curtisbraxdale/blog-gator/internal/config"
+	"github.com/curtisbraxdale/blog-gator/internal/database"
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 )
 
 type state struct {
+	db     *database.Queries
 	config *config.Config
 }
 
@@ -45,8 +52,12 @@ func main() {
 	}
 
 	appState := state{config: &fig}
+	db, err := sql.Open("postgres", fig.DbUrl)
+	dbQueries := database.New(db)
+	appState.db = dbQueries
 	cliCommands := commands{make(map[string]func(*state, command) error)}
 	cliCommands.register("login", handlerLogin)
+	cliCommands.register("register", handlerRegister)
 
 	cliArguments := os.Args
 	if len(cliArguments) < 2 {
@@ -70,10 +81,34 @@ func handlerLogin(s *state, cmd command) error {
 		return errors.New("No Arguments")
 	}
 	username := cmd.arguments[0]
-	err := s.config.SetUser(username)
+	_, err := s.db.GetUser(context.Background(), username)
+	if err != nil {
+		os.Exit(1)
+	}
+	err = s.config.SetUser(username)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("User has been set to: %v", username)
+	return nil
+}
+
+func handlerRegister(s *state, cmd command) error {
+	if len(cmd.arguments) < 1 {
+		return errors.New("No Arguments")
+	}
+	username := cmd.arguments[0]
+	userParams := database.CreateUserParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, Name: username}
+	newUser, err := s.db.CreateUser(context.Background(), userParams)
+	if err != nil {
+		fmt.Println("User already exists.")
+		os.Exit(1)
+	}
+	err = s.config.SetUser(username)
+	if err != nil {
+		return err
+	}
+	fmt.Println("User Created:")
+	fmt.Print(newUser)
 	return nil
 }
