@@ -58,6 +58,7 @@ func main() {
 	cliCommands := commands{make(map[string]func(*state, command) error)}
 	cliCommands.register("login", handlerLogin)
 	cliCommands.register("register", handlerRegister)
+	cliCommands.register("reset", handlerReset)
 
 	cliArguments := os.Args
 	if len(cliArguments) < 2 {
@@ -110,5 +111,15 @@ func handlerRegister(s *state, cmd command) error {
 	}
 	fmt.Println("User Created:")
 	fmt.Print(newUser)
+	return nil
+}
+
+func handlerReset(s *state, cmd command) error {
+	err := s.db.ResetDB(context.Background())
+	if err != nil {
+		os.Exit(1)
+	}
+	fmt.Println("Succesfully reset table.")
+	os.Exit(0)
 	return nil
 }
