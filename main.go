@@ -10,6 +10,7 @@ import (
 
 	"github.com/curtisbraxdale/blog-gator/internal/config"
 	"github.com/curtisbraxdale/blog-gator/internal/database"
+	"github.com/curtisbraxdale/blog-gator/internal/rss"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
@@ -60,6 +61,8 @@ func main() {
 	cliCommands.register("register", handlerRegister)
 	cliCommands.register("reset", handlerReset)
 	cliCommands.register("users", handlerUsers)
+	cliCommands.register("agg", handlerAgg)
+	cliCommands.register("addfeed", handlerAddFeed)
 
 	cliArguments := os.Args
 	if len(cliArguments) < 2 {
@@ -138,5 +141,32 @@ func handlerUsers(s *state, cmd command) error {
 		}
 	}
 	os.Exit(0)
+	return nil
+}
+
+func handlerAgg(s *state, cmd command) error {
+	feed, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		os.Exit(1)
+	}
+	fmt.Print(feed)
+	return nil
+}
+
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.arguments) < 2 {
+		return errors.New("Not enough arguments.")
+	}
+	user_id, err := s.db.GetUserID(context.Background(), s.config.CurrentUserName)
+	if err != nil {
+		return err
+	}
+	feed_params := database.CreateFeedParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, Name: cmd.arguments[0], Url: cmd.arguments[1], UserID: user_id}
+	new_feed, err := s.db.CreateFeed(context.Background(), feed_params)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Feed created:")
+	fmt.Print(new_feed)
 	return nil
 }
