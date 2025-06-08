@@ -55,6 +55,50 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 	return i, err
 }
 
+const getFeedID = `-- name: GetFeedID :one
+SELECT id FROM feeds WHERE url = $1
+`
+
+func (q *Queries) GetFeedID(ctx context.Context, url string) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, getFeedID, url)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getFeeds = `-- name: GetFeeds :many
+SELECT name, url, user_id FROM feeds
+`
+
+type GetFeedsRow struct {
+	Name   string
+	Url    string
+	UserID uuid.UUID
+}
+
+func (q *Queries) GetFeeds(ctx context.Context) ([]GetFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getFeeds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFeedsRow
+	for rows.Next() {
+		var i GetFeedsRow
+		if err := rows.Scan(&i.Name, &i.Url, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resetFeeds = `-- name: ResetFeeds :exec
 DELETE FROM feeds
 `
