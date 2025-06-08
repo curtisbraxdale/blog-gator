@@ -62,10 +62,10 @@ func main() {
 	cliCommands.register("reset", handlerReset)
 	cliCommands.register("users", handlerUsers)
 	cliCommands.register("agg", handlerAgg)
-	cliCommands.register("addfeed", handlerAddFeed)
+	cliCommands.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	cliCommands.register("feeds", handlerFeeds)
-	cliCommands.register("follow", handlerFollow)
-	cliCommands.register("following", handlerFollowing)
+	cliCommands.register("follow", middlewareLoggedIn(handlerFollow))
+	cliCommands.register("following", middlewareLoggedIn(handlerFollowing))
 
 	cliArguments := os.Args
 	if len(cliArguments) < 2 {
@@ -81,6 +81,16 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error Found: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		user, err := s.db.GetUser(context.Background(), s.config.CurrentUserName)
+		if err != nil {
+			return err
+		}
+		return handler(s, cmd, user)
 	}
 }
 
@@ -156,21 +166,17 @@ func handlerAgg(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.arguments) < 2 {
 		return errors.New("Not enough arguments.")
 	}
-	user_id, err := s.db.GetUserID(context.Background(), s.config.CurrentUserName)
-	if err != nil {
-		return err
-	}
-	feed_params := database.CreateFeedParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, Name: cmd.arguments[0], Url: cmd.arguments[1], UserID: user_id}
+	feed_params := database.CreateFeedParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, Name: cmd.arguments[0], Url: cmd.arguments[1], UserID: user.ID}
 	new_feed, err := s.db.CreateFeed(context.Background(), feed_params)
 	if err != nil {
 		return err
 	}
 
-	feedFollowParams := database.CreateFeedFollowParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UserID: user_id, FeedID: new_feed.ID}
+	feedFollowParams := database.CreateFeedFollowParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UserID: user.ID, FeedID: new_feed.ID}
 	_, err = s.db.CreateFeedFollow(context.Background(), feedFollowParams)
 	if err != nil {
 		return err
@@ -198,19 +204,15 @@ func handlerFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, user database.User) error {
 	if len(cmd.arguments) < 1 {
 		return errors.New("Not enough arguments.")
-	}
-	user_id, err := s.db.GetUserID(context.Background(), s.config.CurrentUserName)
-	if err != nil {
-		return err
 	}
 	feed_id, err := s.db.GetFeedID(context.Background(), cmd.arguments[0])
 	if err != nil {
 		return err
 	}
-	feedFollowParams := database.CreateFeedFollowParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UserID: user_id, FeedID: feed_id}
+	feedFollowParams := database.CreateFeedFollowParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UserID: user.ID, FeedID: feed_id}
 	newFeedFollows, err := s.db.CreateFeedFollow(context.Background(), feedFollowParams)
 	if err != nil {
 		return err
@@ -219,12 +221,8 @@ func handlerFollow(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollowing(s *state, cmd command) error {
-	user_id, err := s.db.GetUserID(context.Background(), s.config.CurrentUserName)
-	if err != nil {
-		return err
-	}
-	following, err := s.db.GetFeedFollowsForUser(context.Background(), user_id)
+func handlerFollowing(s *state, cmd command, user database.User) error {
+	following, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
 		return err
 	}
