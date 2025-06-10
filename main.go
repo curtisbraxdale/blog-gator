@@ -159,12 +159,18 @@ func handlerUsers(s *state, cmd command) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	feed, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
-	if err != nil {
-		os.Exit(1)
+	if len(cmd.arguments) < 1 {
+		return errors.New("Not enough arguments.")
 	}
-	fmt.Print(feed)
-	return nil
+	timeBetweenRequests, err := time.ParseDuration(cmd.arguments[0])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Collecting feeds every %v\n", timeBetweenRequests)
+	ticker := time.NewTicker(timeBetweenRequests)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 }
 
 func handlerAddFeed(s *state, cmd command, user database.User) error {
@@ -247,6 +253,25 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 	err = s.db.DeleteFeedFollow(context.Background(), deleteParams)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+func scrapeFeeds(s *state) error {
+	next_feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+	err = s.db.MarkFeedFetched(context.Background(), next_feed.ID)
+	if err != nil {
+		return err
+	}
+	feed, err := rss.FetchFeed(context.Background(), next_feed.Url)
+	if err != nil {
+		return err
+	}
+	for _, item := range feed.Channel.Item {
+		fmt.Printf("%v\n", item.Title)
 	}
 	return nil
 }

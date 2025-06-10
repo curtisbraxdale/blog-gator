@@ -18,3 +18,13 @@ SELECT name, url, user_id FROM feeds;
 
 -- name: GetFeedID :one
 SELECT id FROM feeds WHERE url = $1;
+
+-- name: MarkFeedFetched :exec
+UPDATE feeds
+SET last_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: GetNextFeedToFetch :one
+SELECT id, name, url FROM feeds
+ORDER BY last_fetched_at NULLS FIRST
+LIMIT 1;
