@@ -5,13 +5,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/curtisbraxdale/blog-gator/internal/config"
 	"github.com/curtisbraxdale/blog-gator/internal/database"
 	"github.com/curtisbraxdale/blog-gator/internal/rss"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -67,6 +70,7 @@ func main() {
 	cliCommands.register("follow", middlewareLoggedIn(handlerFollow))
 	cliCommands.register("following", middlewareLoggedIn(handlerFollowing))
 	cliCommands.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	cliCommands.register("browse", middlewareLoggedIn(handlerBrowse))
 
 	cliArguments := os.Args
 	if len(cliArguments) < 2 {
@@ -271,7 +275,42 @@ func scrapeFeeds(s *state) error {
 		return err
 	}
 	for _, item := range feed.Channel.Item {
-		fmt.Printf("%v\n", item.Title)
+		pub_date, err := time.Parse(time.RFC1123Z, item.PubDate)
+		if err != nil {
+			return err
+		}
+		post := database.CreatePostParams{ID: uuid.New(), CreatedAt: sql.NullTime{Time: time.Now(), Valid: true}, UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true}, Title: item.Title, Url: item.Link, Description: item.Description, PublishedAt: sql.NullTime{Time: pub_date, Valid: true}, FeedID: next_feed.ID}
+		_, err = s.db.CreatePost(context.Background(), post)
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			continue
+		}
+		if err != nil {
+			log.Printf("failed to create post: %v", err)
+		}
+	}
+	return nil
+}
+
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	limit := int32(2)
+	if len(cmd.arguments) > 0 {
+		limit64, err := strconv.ParseInt(cmd.arguments[0], 10, 32)
+		if err != nil {
+			return err
+		}
+		limit = int32(limit64)
+	}
+	get_post_params := database.GetPostsForUserParams{UserID: user.ID, Limit: int32(limit)}
+	posts, err := s.db.GetPostsForUser(context.Background(), get_post_params)
+	if err != nil {
+		return err
+	}
+	fmt.Print("Browsing Posts\n\n")
+	for _, post := range posts {
+		fmt.Printf("\nTitle: %v\nDescription: %v\nPublished: %v\n", post.Title, post.Description, post.PublishedAt.Time.Format("2006-01-02"))
+	}
+	if len(posts) == 0 {
+		fmt.Println("No posts found for your feeds!")
 	}
 	return nil
 }
